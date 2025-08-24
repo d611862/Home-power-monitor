@@ -1,12 +1,14 @@
 /*
-  ReadAnalogVoltage
+ Home Power monitor that counts red led flashes on Electricity meter and determines real time power usage in W or kW
+ Uses a Light Sensitive Resistor that conencts via atatchment to the electricity meter.
+ Arduino nano counts pulses and determines average usage over N pulses.
+ This particular meter uses 3200 pulses per kWh.
 
-  Reads an analog input on pin 0, converts it to voltage, and prints the result to the Serial Monitor.
-  Graphical representation is available using Serial Plotter (Tools > Serial Plotter menu).
-  Attach the center pin of a potentiometer to pin A0, and the outside pins to +5V and ground.
+  Reads an analog input on pin 1, converts it to voltage between 0v and 5v.
 
-  This example code is in the public domain.
+  Writes power usage to 8x32 MAX 7219 LED matrix. Refresh rate of ~1.5s for all power usage scenarios.
 
+  Analog read is based on:
   https://docs.arduino.cc/built-in-examples/basics/ReadAnalogVoltage/
 */
 #include <MD_Parola.h>
@@ -46,12 +48,6 @@ MD_Parola P = MD_Parola(HARDWARE_TYPE, CS_PIN, MAX_DEVICES);
 // the setup routine runs once when you press reset:
 void setup() {
 
-//    pinMode(10, OUTPUT);
-//    pinMode(11, OUTPUT);
-//    pinMode(13, OUTPUT);
-  // initialize serial communication at 9600 bits per second:
-   // Serial.begin(115200);
-//    Wire.begin();
     P.begin(); 
 
     pinMode(LED_BUILTIN, OUTPUT);
@@ -65,9 +61,6 @@ void setup() {
     }
     P.displayAnimate();
     P.displayText("ready", PA_RIGHT, 0, 0, PA_PRINT, PA_NO_EFFECT);
-    //P.displayReset();
-    //delay(2000);   
-
 }
 
 // the loop routine runs over and over again forever:
@@ -94,6 +87,12 @@ void loop() {
       positiveEdge++; // only count from the 2nd positive edge. when the 2nd positive edge is seen, that's one period.
       if (positiveEdge == 1) {
         timeToFirstEdge = millis() - startTime;
+        // when power usage is low time gap between flashes increases. Average over a fewer pulses to maintain a reasonably high refresh interval
+        // when power usage is high time gap between pulses is low. Average over more flashes to maintain accuracy and minimise error.
+        // target number of positive edges to detect is 4 - this is for high power usage
+        // for medium usage => 3
+        // for low usage => 2
+        // use time duration between pulse 0 and pulse 1 as an indicator of usage and set target pulse count for that measurement cycle
         edgesTarget = 4;
         if (timeToFirstEdge > 500) {
           edgesTarget = 2;
@@ -107,7 +106,9 @@ void loop() {
   /* else if (currentVoltage < 1.0 && prevVoltage > 2.5) {
     negativeEdge++;
   } */
+  
   // ignore any readings between 1.0v and 2.5v because these are transient voltages
+  // if 1.0v < voltage < 2.5v then do nothing 
   if (!(currentVoltage > 1.0 && currentVoltage < 2.5)) {
     prevVoltage = currentVoltage;
   }
@@ -136,26 +137,8 @@ void loop() {
     P.displayAnimate();
     P.displayText(newMessage, PA_RIGHT, 0, 0, PA_PRINT, PA_NO_EFFECT);
   }
-/*  if (negativeEdge >= 10) {
-    //Serial.println("10 -ve edges");
-    negativeEdge = 0;
-  }  
-*/
 
-/*  if (counter > 400) {
-    digitalWrite(4, HIGH);
-    counter = 0;  // turn the LED on (HIGH is the voltage level)
-  } else if (counter == 30 ) {                    // wait for a second
-    digitalWrite(4, LOW);   // turn the LED off by making the voltage LOW
-  }
-  
-  counter++;
-*/
-  // print out the value you read:
+  //print out the voltage value you read for troubleshooting and checking pulse shape, pulse high/low voltages
   //Serial.println("Min:0,Max:5.1,Voltage:"+ String(currentVoltage));
   //delay(5);
-}
-
-void sendToDisplay() {
-
 }
