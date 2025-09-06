@@ -54,8 +54,14 @@ bool pulseHigh = false;
 const int pulsesPerKWh = 3200; 
 bool newCycle = true;
 float powerWatts = 0.0;
+int pulseDuration = 0;
+long pulseStartUs = 0;
 char curMessage[BUF_SIZE] = { "POWER" };
 char newMessage[BUF_SIZE] = { " " };
+char powerForWebpage[BUF_SIZE] = { " " };
+char pulseSpacingForWebpage[BUF_SIZE] = { " " };
+char pulseDurationForWebpage[BUF_SIZE] = { " " };
+
 String reading;
 //MD_Parola P = MD_Parola(HARDWARE_TYPE, CS_PIN, MAX_DEVICES);
 MD_Parola P = MD_Parola(HARDWARE_TYPE, DATA_PIN, CLK_PIN, CS_PIN, MAX_DEVICES);
@@ -67,7 +73,8 @@ WebServer server(80);
 // Timezone: Australia/Melbourne (UTC+10 or +11 with DST)
 const char* ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 36000;  // 10 hours
-const int daylightOffset_sec = 3600;  // 1 hour for DST
+//const int daylightOffset_sec = 3600;  // 1 hour for DST
+const int daylightOffset_sec = 0;
 
 
 
@@ -108,7 +115,7 @@ void setup() {
       });
 
       server.on("/power", []() {
-        servePowerPage(newMessage);
+        servePowerPage(powerForWebpage, pulseSpacingForWebpage, pulseDurationForWebpage);
       });
 
       server.begin();
@@ -148,6 +155,7 @@ void loop() {
       positiveEdge++; // only count from the 2nd positive edge. when the 2nd positive edge is seen, that's one period.
       if (positiveEdge == 1) {
         timeToFirstEdge = millis() - startTime;
+        pulseStartUs = micros();
         // when power usage is low time gap between flashes increases. Average over a fewer pulses to maintain a reasonably high refresh interval
         // when power usage is high time gap between pulses is low. Average over more flashes to maintain accuracy and minimise error.
         // target number of positive edges to detect is 4 - this is for high power usage
@@ -164,9 +172,10 @@ void loop() {
       }
     }
   }
-  /* else if (currentVoltage < 1.0 && prevVoltage > 2.5) {
-    negativeEdge++;
-  } */
+  else if (positiveEdge == 1 && currentVoltage < 1.0 && prevVoltage > 2.5) {
+    //pulseDuration = millis() - startTime - timeToFirstEdge;
+    pulseDuration = micros() - pulseStartUs;
+  }
   
   // ignore any readings between 1.0v and 2.5v because these are transient voltages
   // if 1.0v < voltage < 2.5v then do nothing 
@@ -180,6 +189,22 @@ void loop() {
     float energy_kWh = 1.0 * edgesTarget / pulsesPerKWh;
     powerWatts = (energy_kWh * 3600000.0) / duration;
     //Serial.println("duration: " + String(duration) + ", power kW: " + String(powerWatts));
+
+    // for display in html page. 
+    reading = String(pulseDuration/1000.0,1) + " ms";
+    strncpy(pulseDurationForWebpage, reading.c_str(), BUF_SIZE - 1);
+    pulseDurationForWebpage[BUF_SIZE - 1] = '\0';  // Ensure null-termination   
+
+    // for display in html page. 
+    reading = String(1.0 * duration / positiveEdge, 0) + " ms";
+    strncpy(pulseSpacingForWebpage, reading.c_str(), BUF_SIZE - 1);
+    pulseSpacingForWebpage[BUF_SIZE - 1] = '\0';  // Ensure null-termination   
+
+    // for display in html page. use W instead of kW
+    reading = String(powerWatts*1000,0) + " w";
+    strncpy(powerForWebpage, reading.c_str(), BUF_SIZE - 1);
+    powerForWebpage[BUF_SIZE - 1] = '\0';  // Ensure null-termination
+
     positiveEdge = 0;
     newCycle = true;
     //sendToDisplay();
@@ -195,8 +220,6 @@ void loop() {
     }
     strncpy(newMessage, reading.c_str(), BUF_SIZE - 1);
     newMessage[BUF_SIZE - 1] = '\0';  // Ensure null-termination
-      //strcpy(curMessage, newMessage);
-      //P.displayReset();
 
     P.displayAnimate();
     P.displayText(newMessage, PA_RIGHT, 0, 0, PA_PRINT, PA_NO_EFFECT);
@@ -224,12 +247,16 @@ void loop() {
 }
 
 
-void servePowerPage(const char* newMessage) {
+void servePowerPage(const char* powerForWebpage, const char* pulseSpacingForWebpage, const char* pulseDurationForWebpage) {
   String html = "<!DOCTYPE html><html><head><meta http-equiv='refresh' content='2'>";
   html += "<title>Power Monitor</title></head><body>";
-  html += "<h2>Current Power Reading:</h2><p style='font-size:24px;'>";
-  html += String(newMessage);
-  html += "</p><h3>Timestamp:</h3><p>";
+  html += "<h2>Power Reading:</h2><p style='font-size:24px;'>";
+  html += String(powerForWebpage);
+  html += "</p><h3>Pulse spacing:</h3><p style='font-size:20px;'>";  
+  html += String(pulseSpacingForWebpage);  
+  html += "</p><h3>Pulse duration:</h3><p style='font-size:20px;'>";  
+  html += String(pulseDurationForWebpage);    
+  html += "</p><h3>Timestamp:</h3><p style='font-size:20px;'>";
   html += getTimestamp();  // Assumes you have this function from earlier
   html += "</p></body></html>";
   server.send(200, "text/html", html);
